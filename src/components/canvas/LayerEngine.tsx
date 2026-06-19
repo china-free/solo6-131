@@ -18,38 +18,58 @@ import {
   drawOverlayLayer,
 } from './PaintLayer';
 
-const LAYER_IDS = ['varnish', 'uv', 'ir', 'starmap', 'solvent', 'glow', 'overlay'] as const;
+const LAYER_IDS = [
+  'solvent',
+  'starmap',
+  'ir',
+  'uv',
+  'varnish',
+  'overlay',
+  'glow',
+] as const;
 type CanvasLayerId = (typeof LAYER_IDS)[number];
+
+const LAYER_Z_INDEX: Record<CanvasLayerId, number> = {
+  solvent: 0,
+  starmap: 1,
+  ir: 2,
+  uv: 3,
+  varnish: 4,
+  overlay: 5,
+  glow: 6,
+};
 
 export default function LayerEngine() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRefs = useRef<Record<CanvasLayerId, HTMLCanvasElement | null>>({
-    varnish: null,
-    uv: null,
-    ir: null,
-    starmap: null,
     solvent: null,
-    glow: null,
+    starmap: null,
+    ir: null,
+    uv: null,
+    varnish: null,
     overlay: null,
+    glow: null,
   });
+  const varnishErasedRef = useRef<Set<string>>(new Set());
   const rafRef = useRef<number | null>(null);
   const stateRef = useRef({
     lastTool: 'none' as ToolType,
     lastProgress: -1,
   });
   const drawnRef = useRef<Record<CanvasLayerId, boolean>>({
-    varnish: false,
-    uv: false,
-    ir: false,
-    starmap: false,
     solvent: false,
-    glow: false,
+    starmap: false,
+    ir: false,
+    uv: false,
+    varnish: false,
     overlay: false,
+    glow: false,
   });
 
   const currentTool = useGameStore((s) => s.currentTool);
   const solventProgress = useGameStore((s) => s.solventProgress);
   const applySolvent = useGameStore((s) => s.applySolvent);
+  const resetCounter = useGameStore((s) => s.resetCounter);
   const addClueGlobal = useClueStore((s) => s.addClue);
   const setActiveClue = useClueStore((s) => s.setActiveClue);
   const { layers, scanPosition, setScanPos, updateFromTool } = useLayerStore();
@@ -107,6 +127,12 @@ export default function LayerEngine() {
   }, [redrawLayer]);
 
   useEffect(() => {
+    if (resetCounter === 0) return;
+    varnishErasedRef.current.clear();
+    redrawLayer('varnish');
+  }, [resetCounter, redrawLayer]);
+
+  useEffect(() => {
     updateFromTool(currentTool, solventProgress);
   }, [currentTool, solventProgress, updateFromTool]);
 
@@ -136,6 +162,29 @@ export default function LayerEngine() {
     };
   }, []);
 
+  const eraseVarnishAt = useCallback((pos: { x: number; y: number }) => {
+    const varnishCanvas = canvasRefs.current.varnish;
+    if (!varnishCanvas) return;
+    const vctx = varnishCanvas.getContext('2d');
+    if (!vctx) return;
+
+    const cellKey = `${Math.floor(pos.x / 20)}-${Math.floor(pos.y / 20)}`;
+    if (varnishErasedRef.current.has(cellKey)) return;
+    varnishErasedRef.current.add(cellKey);
+
+    vctx.save();
+    vctx.globalCompositeOperation = 'destination-out';
+    const mask = vctx.createRadialGradient(pos.x, pos.y, 5, pos.x, pos.y, 65);
+    mask.addColorStop(0, 'rgba(0,0,0,0.22)');
+    mask.addColorStop(0.5, 'rgba(0,0,0,0.1)');
+    mask.addColorStop(1, 'rgba(0,0,0,0)');
+    vctx.fillStyle = mask;
+    vctx.beginPath();
+    vctx.arc(pos.x, pos.y, 65, 0, Math.PI * 2);
+    vctx.fill();
+    vctx.restore();
+  }, []);
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const pos = getCanvasPos(e);
@@ -143,10 +192,11 @@ export default function LayerEngine() {
       checkHotspots(pos.x, pos.y);
 
       if (currentTool === 'solvent') {
-        applySolvent(0.5);
+        applySolvent(0.6);
+        eraseVarnishAt(pos);
       }
     },
-    [getCanvasPos, setScanPos, checkHotspots, currentTool, applySolvent],
+    [getCanvasPos, setScanPos, checkHotspots, currentTool, applySolvent, eraseVarnishAt],
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -158,12 +208,15 @@ export default function LayerEngine() {
     let prevTool = '';
 
     const tick = () => {
-      const scanStr = scanPosition ? `${scanPosition.x.toFixed(0)},${scanPosition.y.toFixed(0)}` : 'null';
+      const scanStr = scanPosition
+        ? `${scanPosition.x.toFixed(0)},${scanPosition.y.toFixed(0)}`
+        : 'null';
       const toolKey = currentTool;
 
       if (scanStr !== prevScanStr || toolKey !== prevTool) {
         prevScanStr = scanStr;
         prevTool = toolKey;
+
         const glowCanvas = canvasRefs.current.glow;
         if (glowCanvas) {
           const gctx = glowCanvas.getContext('2d');
@@ -173,33 +226,6 @@ export default function LayerEngine() {
                 ? currentTool
                 : null;
             drawScanGlow(gctx, scanPosition, scanTool);
-          }
-        }
-
-        if (currentTool === 'solvent') {
-          const solCanvas = canvasRefs.current.solvent;
-          if (solCanvas && scanPosition) {
-            const sctx = solCanvas.getContext('2d');
-            if (sctx) {
-              sctx.save();
-              sctx.globalCompositeOperation = 'destination-out';
-              const mask = sctx.createRadialGradient(
-                scanPosition.x,
-                scanPosition.y,
-                5,
-                scanPosition.x,
-                scanPosition.y,
-                60,
-              );
-              mask.addColorStop(0, 'rgba(0,0,0,0.12)');
-              mask.addColorStop(0.6, 'rgba(0,0,0,0.06)');
-              mask.addColorStop(1, 'rgba(0,0,0,0)');
-              sctx.fillStyle = mask;
-              sctx.beginPath();
-              sctx.arc(scanPosition.x, scanPosition.y, 60, 0, Math.PI * 2);
-              sctx.fill();
-              sctx.restore();
-            }
           }
         }
       }
@@ -238,8 +264,8 @@ export default function LayerEngine() {
             display: layers[id].visible ? 'block' : 'none',
             opacity: layers[id].opacity,
             mixBlendMode: layers[id].blend as React.CSSProperties['mixBlendMode'],
-            zIndex: LAYER_IDS.indexOf(id),
-            pointerEvents: id === 'overlay' ? 'none' : 'none',
+            zIndex: LAYER_Z_INDEX[id],
+            pointerEvents: 'none',
           }}
         />
       ))}
@@ -250,6 +276,7 @@ export default function LayerEngine() {
           boxShadow:
             'inset 0 0 80px rgba(0,0,0,0.55), inset 0 0 160px rgba(28,15,12,0.35)',
           borderRadius: 2,
+          zIndex: 50,
         }}
       />
     </div>

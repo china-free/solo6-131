@@ -20,13 +20,13 @@ interface LayerState {
 }
 
 const defaultLayers: Record<LayerId, LayerConfig> = {
-  varnish: { visible: true, opacity: 1, blend: 'source-over' },
-  uv: { visible: false, opacity: 0.95, blend: 'screen' },
-  ir: { visible: false, opacity: 0.85, blend: 'multiply' },
-  starmap: { visible: false, opacity: 0.9, blend: 'difference' },
   solvent: { visible: false, opacity: 1, blend: 'source-over' },
-  glow: { visible: true, opacity: 1, blend: 'screen' },
+  starmap: { visible: false, opacity: 0.9, blend: 'difference' },
+  ir: { visible: false, opacity: 0.85, blend: 'multiply' },
+  uv: { visible: false, opacity: 0.95, blend: 'screen' },
+  varnish: { visible: true, opacity: 1, blend: 'source-over' },
   overlay: { visible: false, opacity: 0.7, blend: 'difference' },
+  glow: { visible: true, opacity: 1, blend: 'screen' },
 };
 
 export const useLayerStore = create<LayerState>((set) => ({
@@ -53,23 +53,24 @@ export const useLayerStore = create<LayerState>((set) => ({
     const base: Record<LayerId, LayerConfig> = JSON.parse(
       JSON.stringify(defaultLayers),
     );
+
     base.varnish.opacity = Math.max(0.15, 1 - solventProgress / 140);
 
     switch (tool) {
       case 'uv':
         base.uv.visible = true;
         base.uv.opacity = 0.95;
-        base.varnish.opacity *= 0.35;
+        base.varnish.opacity *= 0.22;
         break;
       case 'ir':
         base.ir.visible = true;
         base.ir.opacity = 0.85;
-        base.varnish.opacity *= 0.25;
+        base.varnish.opacity *= 0.18;
         break;
       case 'grid':
         base.ir.visible = true;
         base.ir.opacity = 0.6;
-        base.varnish.opacity *= 0.6;
+        base.varnish.opacity *= 0.55;
         break;
       case 'stack':
         base.uv.visible = true;
@@ -79,12 +80,12 @@ export const useLayerStore = create<LayerState>((set) => ({
         base.starmap.visible = true;
         base.starmap.opacity = 0.75;
         base.overlay.visible = true;
-        base.varnish.opacity *= 0.18;
+        base.varnish.opacity *= 0.1;
         break;
       case 'solvent':
-        if (solventProgress > 20) {
+        if (solventProgress > 5) {
           base.solvent.visible = true;
-          base.solvent.opacity = Math.min(1, (solventProgress - 20) / 60);
+          base.solvent.opacity = Math.min(1, (solventProgress - 5) / 50);
         }
         break;
       case 'none':

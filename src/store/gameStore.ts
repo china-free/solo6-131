@@ -16,6 +16,7 @@ interface GameState {
   wrongAttempt: boolean;
   showHint: boolean;
   hintIndex: number;
+  resetCounter: number;
   setTool: (t: ToolType) => void;
   applySolvent: (amount: number) => void;
   addClue: (id: ClueId) => void;
@@ -37,6 +38,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   wrongAttempt: false,
   showHint: false,
   hintIndex: 0,
+  resetCounter: 0,
 
   setTool: (t) => {
     const prev = get().currentTool;
@@ -110,5 +112,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       wrongAttempt: false,
       showHint: false,
       hintIndex: 0,
+      resetCounter: get().resetCounter + 1,
     }),
 }));
