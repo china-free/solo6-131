@@ -41,6 +41,7 @@ const LAYER_Z_INDEX: Record<CanvasLayerId, number> = {
 
 export default function LayerEngine() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
   const canvasRefs = useRef<Record<CanvasLayerId, HTMLCanvasElement | null>>({
     solvent: null,
     starmap: null,
@@ -50,11 +51,25 @@ export default function LayerEngine() {
     overlay: null,
     glow: null,
   });
-  const varnishErasedRef = useRef<Set<string>>(new Set());
+
+  const offscreenRef = useRef<{
+    varnishSource: HTMLCanvasElement | null;
+    compositeVarnish: HTMLCanvasElement | null;
+  }>({
+    varnishSource: null,
+    compositeVarnish: null,
+  });
+
+  const mouseStateRef = useRef({
+    lastPos: null as { x: number; y: number } | null,
+    lastTime: 0,
+  });
+
   const rafRef = useRef<number | null>(null);
   const stateRef = useRef({
     lastTool: 'none' as ToolType,
-    lastProgress: -1,
+    lastMaskVersion: -1,
+    frameCount: 0,
   });
   const drawnRef = useRef<Record<CanvasLayerId, boolean>>({
     solvent: false,
@@ -72,7 +87,49 @@ export default function LayerEngine() {
   const resetCounter = useGameStore((s) => s.resetCounter);
   const addClueGlobal = useClueStore((s) => s.addClue);
   const setActiveClue = useClueStore((s) => s.setActiveClue);
-  const { layers, scanPosition, setScanPos, updateFromTool } = useLayerStore();
+
+  const {
+    layers,
+    setScanPos,
+    updateFromTool,
+    addSolventTrailPoint,
+    clearSolventMask,
+  } = useLayerStore();
+
+  const initOffscreen = useCallback(() => {
+    if (!offscreenRef.current.varnishSource) {
+      const c = document.createElement('canvas');
+      c.width = CANVAS_WIDTH;
+      c.height = CANVAS_HEIGHT;
+      offscreenRef.current.varnishSource = c;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        drawVarnishLayer(ctx);
+      }
+    }
+    if (!offscreenRef.current.compositeVarnish) {
+      const c = document.createElement('canvas');
+      c.width = CANVAS_WIDTH;
+      c.height = CANVAS_HEIGHT;
+      offscreenRef.current.compositeVarnish = c;
+    }
+    if (canvasRefs.current.varnish && offscreenRef.current.varnishSource) {
+      const mctx = canvasRefs.current.varnish.getContext('2d');
+      if (mctx) {
+        mctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        mctx.drawImage(offscreenRef.current.varnishSource, 0, 0);
+      }
+    }
+    const currentState = useLayerStore.getState();
+    if (!currentState.solventMask.canvas) {
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width = CANVAS_WIDTH;
+      maskCanvas.height = CANVAS_HEIGHT;
+      useLayerStore.setState((s) => ({
+        solventMask: { ...s.solventMask, canvas: maskCanvas },
+      }));
+    }
+  }, []);
 
   const setCanvasRef = useCallback(
     (id: CanvasLayerId) => (el: HTMLCanvasElement | null) => {
@@ -80,6 +137,29 @@ export default function LayerEngine() {
       if (el) {
         el.width = CANVAS_WIDTH;
         el.height = CANVAS_HEIGHT;
+        if (id === 'varnish' && offscreenRef.current.varnishSource) {
+          const currentMask = useLayerStore.getState().solventMask;
+          const ctx = el.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            if (currentMask.version > 0 && currentMask.canvas) {
+              const compCtx = offscreenRef.current.compositeVarnish?.getContext('2d');
+              if (compCtx && offscreenRef.current.compositeVarnish) {
+                compCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                compCtx.save();
+                compCtx.drawImage(offscreenRef.current.varnishSource, 0, 0);
+                compCtx.globalCompositeOperation = 'destination-out';
+                compCtx.drawImage(currentMask.canvas, 0, 0);
+                compCtx.restore();
+                ctx.drawImage(offscreenRef.current.compositeVarnish, 0, 0);
+              } else {
+                ctx.drawImage(offscreenRef.current.varnishSource, 0, 0);
+              }
+            } else {
+              ctx.drawImage(offscreenRef.current.varnishSource, 0, 0);
+            }
+          }
+        }
       }
     },
     [],
@@ -94,9 +174,6 @@ export default function LayerEngine() {
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     switch (id) {
-      case 'varnish':
-        drawVarnishLayer(ctx);
-        break;
       case 'uv':
         drawUVLayer(ctx);
         break;
@@ -113,28 +190,78 @@ export default function LayerEngine() {
         drawOverlayLayer(ctx);
         break;
       case 'glow':
+      case 'varnish':
         break;
     }
     drawnRef.current[id] = true;
   }, []);
 
+  const applyMaskToVarnish = useCallback(() => {
+    const { varnishSource, compositeVarnish } = offscreenRef.current;
+    const currentState = useLayerStore.getState();
+    const maskCanvas = currentState.solventMask.canvas;
+    
+    if (!varnishSource || !maskCanvas || !compositeVarnish) {
+      return;
+    }
+
+    const W = CANVAS_WIDTH;
+    const H = CANVAS_HEIGHT;
+
+    const compCtx = compositeVarnish.getContext('2d');
+    if (!compCtx) return;
+
+    compCtx.clearRect(0, 0, W, H);
+    compCtx.save();
+    compCtx.drawImage(varnishSource, 0, 0);
+    compCtx.globalCompositeOperation = 'destination-out';
+    compCtx.drawImage(maskCanvas, 0, 0);
+    compCtx.restore();
+
+    const mainVarnish = canvasRefs.current.varnish;
+    if (mainVarnish) {
+      const mctx = mainVarnish.getContext('2d');
+      if (mctx) {
+        mctx.clearRect(0, 0, W, H);
+        mctx.drawImage(compositeVarnish, 0, 0);
+      }
+    }
+
+    useLayerStore.setState((s) => ({
+      solventMask: { ...s.solventMask, dirty: false },
+    }));
+  }, []);
+
   useEffect(() => {
     LAYER_IDS.forEach((id) => {
-      if (id !== 'glow' && !drawnRef.current[id]) {
+      if (id !== 'glow' && id !== 'varnish' && !drawnRef.current[id]) {
         redrawLayer(id);
       }
     });
   }, [redrawLayer]);
 
   useEffect(() => {
-    if (resetCounter === 0) return;
-    varnishErasedRef.current.clear();
-    redrawLayer('varnish');
-  }, [resetCounter, redrawLayer]);
+    initOffscreen();
+  }, [initOffscreen]);
 
   useEffect(() => {
     updateFromTool(currentTool, solventProgress);
   }, [currentTool, solventProgress, updateFromTool]);
+
+  useEffect(() => {
+    if (resetCounter === 0) return;
+    mouseStateRef.current = { lastPos: null, lastTime: 0 };
+    clearSolventMask();
+    initOffscreen();
+    if (offscreenRef.current.varnishSource) {
+      const ctx = offscreenRef.current.varnishSource.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        drawVarnishLayer(ctx);
+      }
+    }
+    stateRef.current.lastMaskVersion = -1;
+  }, [resetCounter, clearSolventMask, initOffscreen]);
 
   const checkHotspots = useCallback(
     (x: number, y: number) => {
@@ -162,29 +289,6 @@ export default function LayerEngine() {
     };
   }, []);
 
-  const eraseVarnishAt = useCallback((pos: { x: number; y: number }) => {
-    const varnishCanvas = canvasRefs.current.varnish;
-    if (!varnishCanvas) return;
-    const vctx = varnishCanvas.getContext('2d');
-    if (!vctx) return;
-
-    const cellKey = `${Math.floor(pos.x / 20)}-${Math.floor(pos.y / 20)}`;
-    if (varnishErasedRef.current.has(cellKey)) return;
-    varnishErasedRef.current.add(cellKey);
-
-    vctx.save();
-    vctx.globalCompositeOperation = 'destination-out';
-    const mask = vctx.createRadialGradient(pos.x, pos.y, 5, pos.x, pos.y, 65);
-    mask.addColorStop(0, 'rgba(0,0,0,0.22)');
-    mask.addColorStop(0.5, 'rgba(0,0,0,0.1)');
-    mask.addColorStop(1, 'rgba(0,0,0,0)');
-    vctx.fillStyle = mask;
-    vctx.beginPath();
-    vctx.arc(pos.x, pos.y, 65, 0, Math.PI * 2);
-    vctx.fill();
-    vctx.restore();
-  }, []);
-
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const pos = getCanvasPos(e);
@@ -193,25 +297,57 @@ export default function LayerEngine() {
 
       if (currentTool === 'solvent') {
         applySolvent(0.6);
-        eraseVarnishAt(pos);
+
+        const now = performance.now();
+        const last = mouseStateRef.current.lastPos;
+        const lastT = mouseStateRef.current.lastTime;
+        let speed = 800;
+
+        if (last && now - lastT > 0) {
+          const dx = pos.x - last.x;
+          const dy = pos.y - last.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          speed = (dist / (now - lastT)) * 1000;
+        }
+
+        addSolventTrailPoint(pos, Math.max(100, Math.min(3500, speed)));
+
+        mouseStateRef.current.lastPos = pos;
+        mouseStateRef.current.lastTime = now;
       }
     },
-    [getCanvasPos, setScanPos, checkHotspots, currentTool, applySolvent, eraseVarnishAt],
+    [getCanvasPos, setScanPos, checkHotspots, currentTool, applySolvent, addSolventTrailPoint],
   );
 
   const handleMouseLeave = useCallback(() => {
     setScanPos(null);
+    mouseStateRef.current.lastPos = null;
   }, [setScanPos]);
 
   useEffect(() => {
+    (window as any).__debugStores = {
+      useLayerStore,
+      useGameStore,
+      useClueStore,
+    };
+
     let prevScanStr = '';
     let prevTool = '';
+    let mounted = true;
 
-    const tick = () => {
-      const scanStr = scanPosition
-        ? `${scanPosition.x.toFixed(0)},${scanPosition.y.toFixed(0)}`
+    const processUpdate = () => {
+      if (!mounted) return;
+
+      const layerState = useLayerStore.getState();
+      const gameState = useGameStore.getState();
+      const currentMask = layerState.solventMask;
+      const currentToolState = gameState.currentTool;
+      const currentScanPos = layerState.scanPosition;
+
+      const scanStr = currentScanPos
+        ? `${currentScanPos.x.toFixed(0)},${currentScanPos.y.toFixed(0)}`
         : 'null';
-      const toolKey = currentTool;
+      const toolKey = currentToolState;
 
       if (scanStr !== prevScanStr || toolKey !== prevTool) {
         prevScanStr = scanStr;
@@ -222,30 +358,73 @@ export default function LayerEngine() {
           const gctx = glowCanvas.getContext('2d');
           if (gctx) {
             const scanTool =
-              currentTool === 'uv' || currentTool === 'ir' || currentTool === 'solvent'
-                ? currentTool
+              currentToolState === 'uv' || currentToolState === 'ir' || currentToolState === 'solvent'
+                ? currentToolState
                 : null;
-            drawScanGlow(gctx, scanPosition, scanTool);
+            drawScanGlow(gctx, currentScanPos, scanTool);
           }
         }
       }
 
-      if (
-        stateRef.current.lastTool !== currentTool ||
-        Math.abs(stateRef.current.lastProgress - solventProgress) > 2
-      ) {
-        stateRef.current.lastTool = currentTool;
-        stateRef.current.lastProgress = solventProgress;
+      const shouldUpdate = 
+        stateRef.current.lastTool !== currentToolState ||
+        currentMask.version !== stateRef.current.lastMaskVersion ||
+        currentMask.dirty;
+      
+      if (shouldUpdate) {
+        stateRef.current.lastTool = currentToolState;
+        stateRef.current.lastMaskVersion = currentMask.version;
+
+        if (currentMask.dirty) {
+          applyMaskToVarnish();
+          useLayerStore.getState().incrementMaskVersion();
+        }
       }
-
-      rafRef.current = requestAnimationFrame(tick);
     };
 
-    rafRef.current = requestAnimationFrame(tick);
+    let lastMaskDirty = false;
+    let lastMaskVersion = -1;
+    let lastToolRef = 'none' as ToolType;
+    let lastScanStrRef = '';
+
+    const unsubscribe = useLayerStore.subscribe((state) => {
+      const mask = state.solventMask;
+      const scanStr = state.scanPosition
+        ? `${state.scanPosition.x.toFixed(0)},${state.scanPosition.y.toFixed(0)}`
+        : 'null';
+      
+      if (mask.dirty !== lastMaskDirty || mask.version !== lastMaskVersion || scanStr !== lastScanStrRef) {
+        lastMaskDirty = mask.dirty;
+        lastMaskVersion = mask.version;
+        lastScanStrRef = scanStr;
+        processUpdate();
+      }
+    });
+
+    const unsubscribeGame = useGameStore.subscribe((state) => {
+      if (state.currentTool !== lastToolRef) {
+        lastToolRef = state.currentTool;
+        processUpdate();
+      }
+    });
+
+    const intervalId = window.setInterval(() => {
+      const state = useLayerStore.getState();
+      if (state.solventMask.dirty) {
+        processUpdate();
+      }
+    }, 100);
+
+    processUpdate();
+
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      mounted = false;
+      unsubscribe();
+      unsubscribeGame();
+      clearInterval(intervalId);
+      delete (window as any).__debugStores;
     };
-  }, [scanPosition, currentTool, solventProgress]);
+  }, [applyMaskToVarnish]);
 
   return (
     <div

@@ -145,8 +145,10 @@ export default function GameLayout() {
             </div>
 
             <div className="w-full h-full max-h-[65vh] flex items-center justify-center">
-              <div className="h-full max-w-[68vh] w-full">
-                <LayerEngine />
+              <div className="h-full w-full flex items-center justify-center">
+                <div className="h-full max-w-[90vh] w-auto aspect-[800/1000]">
+                  <LayerEngine />
+                </div>
               </div>
             </div>
           </div>
