@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #2C1810;
+  background: #1C0F0C;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background:
+    radial-gradient(ellipse at center, #3E2723 0%, #1C0F0C 70%, #0C0706 100%);
+}
+
+@layer components {
+  .brass-btn {
+    @apply relative rounded-full transition-all duration-200 ease-out;
+    background: linear-gradient(145deg, #F4E0A1 0%, #D4AF37 25%, #8B6914 75%, #6B4F0E 100%);
+    box-shadow:
+      0 3px 8px rgba(0,0,0,0.5),
+      inset 0 1px 2px rgba(255,255,255,0.4),
+      inset 0 -2px 6px rgba(107,79,14,0.7);
+  }
+
+  .brass-btn:hover {
+    background: linear-gradient(145deg, #FFF0B0 0%, #E9C67A 25%, #B8860B 75%, #8B6914 100%);
+    transform: translateY(-1px);
+    box-shadow:
+      0 4px 12px rgba(0,0,0,0.6),
+      inset 0 1px 2px rgba(255,255,255,0.5),
+      inset 0 -2px 6px rgba(139,105,20,0.7);
+  }
+
+  .brass-btn:active,
+  .brass-btn.active {
+    transform: translateY(1px);
+    background: linear-gradient(145deg, #8B6914 0%, #6B4F0E 25%, #B8860B 75%, #D4AF37 100%);
+    box-shadow:
+      0 1px 3px rgba(0,0,0,0.5),
+      inset 0 2px 8px rgba(107,79,14,0.8),
+      inset 0 -1px 2px rgba(244,224,161,0.3);
+  }
+
+  .wood-frame {
+    background:
+      repeating-linear-gradient(90deg,
+        transparent 0px, transparent 3px,
+        rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px),
+      repeating-linear-gradient(0deg,
+        rgba(139,105,20,0.04) 0px, rgba(139,105,20,0.04) 1px,
+        transparent 1px, transparent 6px),
+      linear-gradient(180deg,
+        #7A5230 0%, #5C3A1E 15%, #3E2723 50%,
+        #2D1B16 85%, #1C0F0C 100%);
+    border: 1px solid rgba(0,0,0,0.6);
+  }
+
+  .parchment-panel {
+    background:
+      radial-gradient(ellipse at 30% 15%, rgba(184,134,11,0.15) 0%, transparent 45%),
+      radial-gradient(ellipse at 70% 85%, rgba(62,39,35,0.18) 0%, transparent 55%),
+      linear-gradient(180deg, #F5E6C8 0%, #EAD9B8 50%, #E4D2A8 100%);
+    box-shadow:
+      inset 0 0 40px rgba(139,105,20,0.25),
+      inset 0 0 80px rgba(62,39,35,0.15),
+      0 6px 20px rgba(0,0,0,0.4);
+  }
+
+  .torn-top-edge {
+    --rip: 14;
+    clip-path: polygon(
+      0% 3%,
+      3% 0%, 8% 4%, 14% 1%, 20% 5%, 27% 0%, 34% 3%, 41% 6%, 48% 1%,
+      55% 5%, 62% 0%, 69% 4%, 76% 1%, 83% 5%, 90% 2%, 96% 6%, 100% 2%,
+      100% 100%, 0% 100%
+    );
+  }
+
+  .film-grain::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+
+  .vignette::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9998;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(12,7,6,0.55) 100%);
+  }
+
+  .password-wheel {
+    background: linear-gradient(180deg, #3E2723 0%, #1C0F0C 50%, #3E2723 100%);
+    border: 2px solid;
+    border-image: linear-gradient(180deg, #F4E0A1, #8B6914, #F4E0A1) 1;
+    box-shadow:
+      inset 0 2px 8px rgba(0,0,0,0.7),
+      0 2px 6px rgba(0,0,0,0.4);
+  }
+
+  .gold-plaque {
+    background: linear-gradient(135deg, #F4E0A1 0%, #D4AF37 30%, #B8860B 50%, #D4AF37 70%, #F4E0A1 100%);
+    box-shadow:
+      inset 0 1px 2px rgba(255,255,255,0.5),
+      inset 0 -1px 2px rgba(107,79,14,0.5),
+      0 3px 8px rgba(0,0,0,0.4);
+  }
+}
+
+@layer utilities {
+  .text-emboss {
+    text-shadow:
+      0 1px 0 rgba(255,255,255,0.2),
+      0 -1px 0 rgba(0,0,0,0.5);
+  }
+
+  .scroll-hidden::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scroll-hidden::-webkit-scrollbar-track {
+    background: rgba(62,39,35,0.2);
+  }
+  .scroll-hidden::-webkit-scrollbar-thumb {
+    background: #8B6914;
+    border-radius: 3px;
+  }
+}
